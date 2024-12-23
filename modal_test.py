@@ -1,4 +1,5 @@
 import modal
+import json
 
 image = (
     modal.Image.debian_slim(python_version="3.11")
@@ -8,27 +9,26 @@ image = (
     .pip_install("scikit-learn")
     .pip_install("pillow==11.0.0")
     .pip_install("scipy==1.14.1")
-    .copy_local_file("local_test.py", "/data/programs/test.py")
 )
 
 # dockerfile_image = modal.Image.from_dockerfile("dockerfile")
 
 app = modal.App("modal-test")
-
 @app.function(image=image)
-def fit():
-    import requests
+@modal.web_endpoint(method="POST")
+def run_on_image(run_data: dict):
     from PIL import Image
     import torch
-
     from transformers import Owlv2Processor, Owlv2ForObjectDetection
+    import base64
+    from io import BytesIO
+
+    texts = run_data["text_prompt"]
 
     processor = Owlv2Processor.from_pretrained("google/owlv2-base-patch16-ensemble")
     model = Owlv2ForObjectDetection.from_pretrained("google/owlv2-base-patch16-ensemble")
 
-    url = "http://images.cocodataset.org/val2017/000000039769.jpg"
-    image = Image.open(requests.get(url, stream=True).raw)
-    texts = [["a photo of a cat", "a photo of a dog"]]
+    image = Image.open(BytesIO(base64.b64decode(run_data["image"])))
     inputs = processor(text=texts, images=image, return_tensors="pt")
     outputs = model(**inputs)
 
@@ -42,3 +42,4 @@ def fit():
     for box, score, label in zip(boxes, scores, labels):
         box = [round(i, 2) for i in box.tolist()]
         print(f"Detected {text[label]} with confidence {round(score.item(), 3)} at location {box}")
+    return { "bboxes": box}
